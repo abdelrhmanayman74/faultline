@@ -1,7 +1,7 @@
-# faultline Part 3: faultline faultsim --threads 12 vs tools/ref_faultsim.py (naive per-fault, per-vector re-simulation)
+# faultline Part 3: faultline faultsim --threads 12 vs tools/ref_faultsim.py (naive per-fault, per-vector re-simulation), all 11 circuits in two runs
 # date: 2026-11-08 00:53 UTC
 # command: python3 tools/faultsim_check.py --threads 12 --cli build/release/faultline --vectors 256 --seed 1 benchmarks/iscas85/c17.bench benchmarks/downloaded/c432.bench benchmarks/downloaded/c499.bench benchmarks/downloaded/c880.bench benchmarks/downloaded/c1355.bench
-# machine: Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
+# machine: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz, Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
 # compared per circuit: fault list, detected set, first detecting vector of every detected fault
 
 # seed=1; vectors per circuit=256; threads=12
@@ -10,4 +10,16 @@ c432: 256 vectors, 392 faults, 380 detected (96.94%), detected sets and first-de
 c499: 256 vectors, 486 faults, 459 detected (94.44%), detected sets and first-detecting vectors match (oracle 2.7 s)
 c880: 256 vectors, 886 faults, 855 detected (96.50%), detected sets and first-detecting vectors match (oracle 4.2 s)
 c1355: 256 vectors, 1174 faults, 1136 detected (96.76%), detected sets and first-detecting vectors match (oracle 12.7 s)
+ALL MATCH
+
+# Second run (2026-11-08, 01:31-01:50 UTC), the six larger circuits, same machine, same 12 threads:
+# command: python3 -u tools/faultsim_check.py --threads 12 --cli build/release/faultline --vectors 256 --seed 1 benchmarks/downloaded/c1908.bench benchmarks/downloaded/c2670.bench benchmarks/downloaded/c3540.bench benchmarks/downloaded/c5315.bench benchmarks/downloaded/c6288.bench benchmarks/downloaded/c7552.bench
+
+# seed=1; vectors per circuit=256; threads=12
+c1908: 256 vectors, 1826 faults, 1690 detected (92.55%), detected sets and first-detecting vectors match (oracle 71.7 s)
+c2670: 256 vectors, 2852 faults, 2366 detected (82.96%), detected sets and first-detecting vectors match (oracle 163.4 s)
+c3540: 256 vectors, 3438 faults, 3012 detected (87.61%), detected sets and first-detecting vectors match (oracle 223.5 s)
+c5315: 256 vectors, 4970 faults, 4922 detected (99.03%), detected sets and first-detecting vectors match (oracle 158.6 s)
+c6288: 256 vectors, 4896 faults, 4879 detected (99.65%), detected sets and first-detecting vectors match (oracle 36.7 s)
+c7552: 256 vectors, 7438 faults, 6940 detected (93.30%), detected sets and first-detecting vectors match (oracle 506.9 s)
 ALL MATCH

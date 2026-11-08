@@ -1,0 +1,35 @@
+# faultline Part 5: clean build and full test suite in every preset, plus cancel latency
+# date: 2026-11-08 01:28-01:32 UTC (suite), 01:40 UTC (cancel latency repeats)
+# machine: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz, Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12, CMake 4.4.4 and Ninja 1.13.2 from pip, Icarus Verilog 11.0
+# benchmarks/downloaded/ present (tools/fetch_benchmarks.sh), so no circuit test was skipped.
+# command (suite):
+#   rm -rf build
+#   for p in debug release asan tsan; do
+#     cmake --preset $p && cmake --build --preset $p && ctest --preset $p -V
+#   done
+# Builds use -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror on project targets: 0 warnings.
+# asan = -fsanitize=address,undefined; tsan = -fsanitize=thread, tests run under `setarch x86_64 -R`.
+# A sanitizer report fails the run: the GoogleTest binary exits non-zero, and every server
+# integration test requires server exit status 0 and no "Sanitizer" in the server's stderr.
+
+## ctest (99 tests: 94 GoogleTest cases, python_unittests, faultsim_check_c17,
+## faultsim_check_c17_threads4, server_integration (14 tests), iverilog_check_c17)
+preset    result                          ctest wall time
+debug     100% tests passed out of 99     16.98 s
+release   100% tests passed out of 99      2.62 s
+asan      100% tests passed out of 99     25.47 s
+tsan      100% tests passed out of 99     88.21 s
+
+## Cancel latency: test_server.Jobs.test_cancel_long_job
+# c7552, 30000 random vectors, threads=1; time from sending CANCEL until STATUS reports
+# `cancelled` (the test polls STATUS every 20 ms, so this includes up to one poll interval).
+# First value: the ctest run above. Then 5 repeats per build, each:
+#   cd tests/python && FAULTLINE_SERVER=../../build/<preset>/faultline_server \
+#     FAULTLINE_CLI=../../build/<preset>/faultline [setarch x86_64 -R] \
+#     python3 -m unittest test_server.Jobs.test_cancel_long_job
+# (the repeats ran while a single-threaded Python oracle check used one other core)
+preset    ctest run   repeats (ms)
+release   20 ms       61 61 62 41 41
+debug     231 ms      81 81 81 122 102
+asan      142 ms      -
+tsan      672 ms      673 650 651 649 650

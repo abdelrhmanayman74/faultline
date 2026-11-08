@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.preset }}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # release is included because -O3 can raise warnings (-Werror) that
+        # the debug build does not.
+        preset: [debug, release, asan, tsan]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Icarus Verilog
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+
+      - name: Install CMake and Ninja (pip, same as a local checkout)
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install cmake ninja
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Show tool versions
+        run: |
+          g++ --version | head -n 1
+          cmake --version | head -n 1
+          ninja --version
+          python3 --version
+          iverilog -V 2>&1 | head -n 1 || true
+
+      # The ISCAS-85 netlists are not redistributed (see NOTICE.md). They are
+      # downloaded and checked against tools/benchmarks.sha256. If the download
+      # fails, the tests that need them skip (GTEST_SKIP / skipTest) and the
+      # rest still runs.
+      - name: Cache ISCAS-85 benchmarks
+        id: benchmarks-cache
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/downloaded
+          key: iscas85-${{ hashFiles('tools/benchmarks.sha256') }}
+
+      - name: Fetch ISCAS-85 benchmarks
+        if: steps.benchmarks-cache.outputs.cache-hit != 'true'
+        run: |
+          if ! tools/fetch_benchmarks.sh; then
+            echo "::warning::benchmark download failed; circuit tests will be skipped"
+            rm -rf benchmarks/downloaded
+          fi
+
+      # g++ 11's ThreadSanitizer aborts when the kernel uses many address
+      # randomization bits. The tsan preset already runs every test under
+      # `setarch -R` (TEST_LAUNCHER in CMakeLists.txt); lowering the bits on
+      # the runner as well is a second safeguard.
+      - name: Reduce address randomization for TSan
+        if: matrix.preset == 'tsan'
+        run: sudo sysctl -w vm.mmap_rnd_bits=28 || true
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}

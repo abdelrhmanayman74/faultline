@@ -1,7 +1,7 @@
 # faultline Part 2: faultline faultsim vs tools/ref_faultsim.py (naive per-fault, per-vector re-simulation)
 # date: 2026-11-08 00:16 UTC
 # command: python3 tools/faultsim_check.py --cli build/debug/faultline --vectors 256 --seed 1 benchmarks/iscas85/c17.bench benchmarks/downloaded/c432.bench benchmarks/downloaded/c499.bench benchmarks/downloaded/c880.bench benchmarks/downloaded/c1355.bench
-# machine: Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
+# machine: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz, Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
 # compared per circuit: fault list, detected set, first detecting vector of every detected fault
 
 # seed=1; vectors per circuit=256

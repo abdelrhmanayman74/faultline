@@ -170,8 +170,9 @@ that runs for a long time does not grow without limit.
 Requests a stop. A queued job becomes `cancelled` at once and never runs. A
 running job stops at its next block of 64 vectors and then becomes
 `cancelled`. Measured by `test_cancel_long_job` (2026-11-08, c7552, 1
-thread): 61 ms in the debug build, 590 ms under TSan. Any connection may
-cancel any job.
+thread, including the test's 20 ms polling): 20-62 ms in the release build,
+81-231 ms in the debug build, 649-673 ms under TSan
+(`docs/results/part5_verification.txt`). Any connection may cancel any job.
 
 ```
 > CANCEL 5

@@ -505,8 +505,9 @@ client's job stop without touching anyone else's.
   the worker skips it when it reaches it. On a running job:
   `request_stop()`; the simulation checks the token before each block and
   throws `Cancelled`, and the worker records `cancelled`. Latency is one block
-  (64 vectors) of one chunk: 61 ms debug / 590 ms TSan on c7552 in
-  `test_cancel_long_job`. Random vector generation is not interruptible
+  (64 vectors) of one chunk: on c7552 in `test_cancel_long_job`, 20-62 ms
+  release, 81-231 ms debug, 649-673 ms TSan
+  (`docs/results/part5_verification.txt`). Random vector generation is not interruptible
   (fast compared with the simulation).
 - **Client disconnect.** The connection thread sees end of stream or an
   error from `recv()`/`send()`, then cancels every unfinished job whose
