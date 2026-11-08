@@ -1,5 +1,7 @@
 # faultline
 
+[![ci](https://github.com/abdelrhmanayman74/faultline/actions/workflows/ci.yml/badge.svg)](https://github.com/abdelrhmanayman74/faultline/actions/workflows/ci.yml)
+
 A parallel stuck-at fault simulator for ISCAS-85 gate-level netlists, served
 over a multithreaded TCP job server, and checked against Icarus Verilog and an
 independent Python oracle. C++20, Linux.
