@@ -1,0 +1,18 @@
+# faultline Part 1: three-way check (faultline sim vs tools/ref_eval.py vs Icarus Verilog)
+# date: 2026-11-08 00:03 UTC
+# command: python3 tools/iverilog_check.py --cli build/debug/faultline --vectors 1000 --seed 1 benchmarks/iscas85/c17.bench benchmarks/downloaded/c432.bench benchmarks/downloaded/c499.bench benchmarks/downloaded/c880.bench benchmarks/downloaded/c1355.bench benchmarks/downloaded/c1908.bench benchmarks/downloaded/c2670.bench benchmarks/downloaded/c3540.bench benchmarks/downloaded/c5315.bench benchmarks/downloaded/c6288.bench benchmarks/downloaded/c7552.bench 
+# machine: Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
+
+# Icarus Verilog version 11.0 (stable) (); seed=1; vectors per circuit=1000
+c17: 32 vectors, 5 inputs, 2 outputs, 3-way match
+c432: 1000 vectors, 36 inputs, 7 outputs, 3-way match
+c499: 1000 vectors, 41 inputs, 32 outputs, 3-way match
+c880: 1000 vectors, 60 inputs, 26 outputs, 3-way match
+c1355: 1000 vectors, 41 inputs, 32 outputs, 3-way match
+c1908: 1000 vectors, 33 inputs, 25 outputs, 3-way match
+c2670: 1000 vectors, 233 inputs, 140 outputs, 3-way match
+c3540: 1000 vectors, 50 inputs, 22 outputs, 3-way match
+c5315: 1000 vectors, 178 inputs, 123 outputs, 3-way match
+c6288: 1000 vectors, 32 inputs, 32 outputs, 3-way match
+c7552: 1000 vectors, 207 inputs, 108 outputs, 3-way match
+ALL MATCH
