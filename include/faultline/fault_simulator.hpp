@@ -21,6 +21,8 @@ namespace faultline {
 struct Fault {
     NetId net = 0;
     Logic stuck_at = 0;
+
+    bool operator==(const Fault&) const = default;
 };
 
 // Stuck-at-0 and stuck-at-1 on every net (primary inputs included), ordered
@@ -34,6 +36,8 @@ std::string fault_name(const Netlist& netlist, const Fault& fault);
 struct FaultStatus {
     bool detected = false;
     std::size_t first_vector = 0;  // index of the first vector that detects it
+
+    bool operator==(const FaultStatus&) const = default;  // member-wise; used to compare runs
 };
 
 // Parallel-pattern single-fault propagation (PPSFP) against one block.

@@ -2,8 +2,10 @@
 //   faultline info <file.bench>                                 circuit statistics
 //   faultline sim  <file.bench> <vectors.txt> [--bitparallel]   one output line per vector
 //   faultline faultsim <file.bench> (--vectors <file> | --random N [--seed S])
-//                      [--detections] [--undetected]            stuck-at fault simulation
+//                      [--threads N] [--detections] [--undetected]
+//                                                               stuck-at fault simulation
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
@@ -13,11 +15,13 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "faultline/bench_parser.hpp"
 #include "faultline/bit_parallel_simulator.hpp"
 #include "faultline/fault_simulator.hpp"
+#include "faultline/parallel_fault_simulator.hpp"
 #include "faultline/scalar_simulator.hpp"
 #include "faultline/vectors.hpp"
 
@@ -34,9 +38,10 @@ int usage() {
                  "  faultline info <file.bench>\n"
                  "  faultline sim <file.bench> <vectors.txt> [--bitparallel]\n"
                  "  faultline faultsim <file.bench> (--vectors <file> | --random N [--seed S])\n"
-                 "                     [--detections] [--undetected]\n"
+                 "                     [--threads N] [--detections] [--undetected]\n"
                  "faultsim prints a summary; --detections adds 'D <net> SA<v> <first vector>'\n"
-                 "lines, --undetected adds 'U <net> SA<v>' lines. Default seed: 1.\n";
+                 "lines, --undetected adds 'U <net> SA<v>' lines. Default seed: 1.\n"
+                 "--threads: default 1 (single-thread code path); 0 = all hardware threads.\n";
     return EXIT_FAILURE;
 }
 
@@ -91,6 +96,7 @@ struct FaultsimOptions {
     std::string vectors_path;  // empty when --random is used
     std::uint64_t random_count = 0;
     std::uint64_t seed = 1;
+    std::uint64_t threads = 1;  // 1 = the single-thread run_fault_simulation()
     bool use_random = false;
     bool list_detections = false;
     bool list_undetected = false;
@@ -109,6 +115,8 @@ FaultsimOptions parse_faultsim_args(const std::vector<std::string>& args) {
             options.use_random = true;
         } else if (arg == "--seed" && has_value) {
             options.seed = parse_number(args[++i], arg);
+        } else if (arg == "--threads" && has_value) {
+            options.threads = parse_number(args[++i], arg);
         } else if (arg == "--detections") {
             options.list_detections = true;
         } else if (arg == "--undetected") {
@@ -138,9 +146,16 @@ int run_faultsim(const FaultsimOptions& options) {
         options.use_random ? faultline::random_vectors(options.random_count, num_inputs, options.seed)
                            : faultline::read_vectors_file(options.vectors_path, num_inputs);
 
+    std::size_t threads = options.threads;
+    if (threads == 0) {
+        threads = std::max(1U, std::thread::hardware_concurrency());  // it may return 0 if unknown
+    }
+
     // Timed part: fault simulation only, not parsing or vector generation.
     const auto start = std::chrono::steady_clock::now();
-    const faultline::FaultSimReport report = faultline::run_fault_simulation(netlist, vectors);
+    const faultline::FaultSimReport report =
+        threads == 1 ? faultline::run_fault_simulation(netlist, vectors)
+                     : faultline::run_fault_simulation_parallel(netlist, vectors, threads);
     const std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - start;
 
     const std::size_t total = report.faults.size();
@@ -153,7 +168,8 @@ int run_faultsim(const FaultsimOptions& options) {
                       "undetected: " + std::to_string(total - detected) + '\n' +
                       "coverage:   " + format_fixed(report.coverage_percent(), "%.2f%%") + '\n' +
                       "time_ms:    " + format_fixed(elapsed.count(), "%.3f") +
-                      " (fault simulation only, single thread)\n";
+                      " (fault simulation only, " + std::to_string(threads) +
+                      (threads == 1 ? " thread)\n" : " threads)\n");
     for (std::size_t i = 0; i < total; ++i) {
         const faultline::FaultStatus& status = report.status[i];
         const std::string name = faultline::fault_name(netlist, report.faults[i]);

@@ -43,13 +43,21 @@ add_library(faultline_core
   src/vectors.cpp
   src/bit_parallel_simulator.cpp
   src/fault_simulator.cpp
+  src/thread_pool.cpp
+  src/parallel_fault_simulator.cpp
 )
 target_include_directories(faultline_core PUBLIC include)
+find_package(Threads REQUIRED)
+target_link_libraries(faultline_core PUBLIC Threads::Threads)
 faultline_warnings(faultline_core)
 
 add_executable(faultline apps/faultline_cli.cpp)
 target_link_libraries(faultline PRIVATE faultline_core)
 faultline_warnings(faultline)
+
+add_executable(faultline_bench apps/faultline_bench.cpp)
+target_link_libraries(faultline_bench PRIVATE faultline_core)
+faultline_warnings(faultline_bench)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -70,6 +78,9 @@ if(BUILD_TESTING)
     tests/test_scalar_simulator.cpp
     tests/test_bit_parallel_simulator.cpp
     tests/test_fault_simulator.cpp
+    tests/test_bounded_queue.cpp
+    tests/test_thread_pool.cpp
+    tests/test_parallel_fault_simulator.cpp
   )
   target_link_libraries(faultline_tests PRIVATE faultline_core GTest::gtest_main)
   target_compile_definitions(faultline_tests PRIVATE
@@ -91,6 +102,12 @@ if(BUILD_TESTING)
     add_test(NAME faultsim_check_c17
       COMMAND ${FAULTLINE_TEST_LAUNCHER} ${Python3_EXECUTABLE}
               ${CMAKE_SOURCE_DIR}/tools/faultsim_check.py
+              --cli $<TARGET_FILE:faultline>
+              ${CMAKE_SOURCE_DIR}/benchmarks/iscas85/c17.bench)
+    # Same oracle check through the multithreaded path of the CLI.
+    add_test(NAME faultsim_check_c17_threads4
+      COMMAND ${FAULTLINE_TEST_LAUNCHER} ${Python3_EXECUTABLE}
+              ${CMAKE_SOURCE_DIR}/tools/faultsim_check.py --threads 4
               --cli $<TARGET_FILE:faultline>
               ${CMAKE_SOURCE_DIR}/benchmarks/iscas85/c17.bench)
 

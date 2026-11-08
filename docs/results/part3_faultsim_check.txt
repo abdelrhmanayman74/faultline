@@ -1,0 +1,13 @@
+# faultline Part 3: faultline faultsim --threads 12 vs tools/ref_faultsim.py (naive per-fault, per-vector re-simulation)
+# date: 2026-11-08 00:53 UTC
+# command: python3 tools/faultsim_check.py --threads 12 --cli build/release/faultline --vectors 256 --seed 1 benchmarks/iscas85/c17.bench benchmarks/downloaded/c432.bench benchmarks/downloaded/c499.bench benchmarks/downloaded/c880.bench benchmarks/downloaded/c1355.bench
+# machine: Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
+# compared per circuit: fault list, detected set, first detecting vector of every detected fault
+
+# seed=1; vectors per circuit=256; threads=12
+c17: 32 vectors, 22 faults, 22 detected (100.00%), detected sets and first-detecting vectors match (oracle 0.0 s)
+c432: 256 vectors, 392 faults, 380 detected (96.94%), detected sets and first-detecting vectors match (oracle 1.0 s)
+c499: 256 vectors, 486 faults, 459 detected (94.44%), detected sets and first-detecting vectors match (oracle 2.7 s)
+c880: 256 vectors, 886 faults, 855 detected (96.50%), detected sets and first-detecting vectors match (oracle 4.2 s)
+c1355: 256 vectors, 1174 faults, 1136 detected (96.76%), detected sets and first-detecting vectors match (oracle 12.7 s)
+ALL MATCH

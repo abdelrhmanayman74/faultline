@@ -54,4 +54,12 @@ private:
     std::vector<std::string> cycle_;
 };
 
+// A long job saw its stop token set and gave up before finishing. Thrown
+// instead of returning a partial result, so a half-done report can never be
+// mistaken for a real one.
+class Cancelled : public std::runtime_error {
+public:
+    Cancelled() : std::runtime_error("cancelled") {}
+};
+
 }  // namespace faultline

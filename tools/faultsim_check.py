@@ -37,7 +37,7 @@ def parse_cli_output(text):
     return results
 
 
-def check_circuit(bench, cli, count, seed):
+def check_circuit(bench, cli, count, seed, threads):
     inputs, _, _ = ref_eval.parse_bench(str(bench))
     vectors = make_vectors(len(inputs), count, seed, bench.stem)
     with tempfile.TemporaryDirectory() as tmp:
@@ -45,7 +45,7 @@ def check_circuit(bench, cli, count, seed):
         vector_file.write_text("\n".join(vectors) + "\n")
         cli_run = subprocess.run(
             [cli, "faultsim", str(bench), "--vectors", str(vector_file), "--detections",
-             "--undetected"], capture_output=True, text=True, check=False)
+             "--undetected", "--threads", str(threads)], capture_output=True, text=True, check=False)
     if cli_run.returncode != 0:
         print(f"{bench.stem}: FAIL, faultline exited {cli_run.returncode}: {cli_run.stderr}")
         return False
@@ -79,12 +79,13 @@ def main():
     parser.add_argument("--cli", default=str(TOOLS.parent / "build" / "debug" / "faultline"))
     parser.add_argument("--vectors", type=int, default=256)
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--threads", type=int, default=1, help="passed to faultline faultsim")
     args = parser.parse_args()
 
-    print(f"# seed={args.seed}; vectors per circuit={args.vectors}")
+    print(f"# seed={args.seed}; vectors per circuit={args.vectors}; threads={args.threads}")
     all_ok = True
     for bench in args.benches:
-        all_ok = check_circuit(bench, args.cli, args.vectors, args.seed) and all_ok
+        all_ok = check_circuit(bench, args.cli, args.vectors, args.seed, args.threads) and all_ok
     print("ALL MATCH" if all_ok else "SOME CIRCUITS FAILED")
     return 0 if all_ok else 1
 
