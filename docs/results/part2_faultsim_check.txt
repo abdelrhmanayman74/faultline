@@ -1,0 +1,27 @@
+# faultline Part 2: faultline faultsim vs tools/ref_faultsim.py (naive per-fault, per-vector re-simulation)
+# date: 2026-11-08 00:16 UTC
+# command: python3 tools/faultsim_check.py --cli build/debug/faultline --vectors 256 --seed 1 benchmarks/iscas85/c17.bench benchmarks/downloaded/c432.bench benchmarks/downloaded/c499.bench benchmarks/downloaded/c880.bench benchmarks/downloaded/c1355.bench
+# machine: Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, Python 3.10.12
+# compared per circuit: fault list, detected set, first detecting vector of every detected fault
+
+# seed=1; vectors per circuit=256
+c17: 32 vectors, 22 faults, 22 detected (100.00%), detected sets and first-detecting vectors match (oracle 0.0 s)
+c432: 256 vectors, 392 faults, 380 detected (96.94%), detected sets and first-detecting vectors match (oracle 1.1 s)
+c499: 256 vectors, 486 faults, 459 detected (94.44%), detected sets and first-detecting vectors match (oracle 2.7 s)
+c880: 256 vectors, 886 faults, 855 detected (96.50%), detected sets and first-detecting vectors match (oracle 4.3 s)
+c1355: 256 vectors, 1174 faults, 1136 detected (96.76%), detected sets and first-detecting vectors match (oracle 12.7 s)
+ALL MATCH
+
+# Second run, same day (finished 2026-11-08 00:35 UTC), the six larger circuits:
+# command: python3 -u tools/faultsim_check.py --cli build/debug/faultline --vectors 256 --seed 1 benchmarks/downloaded/c1908.bench benchmarks/downloaded/c2670.bench benchmarks/downloaded/c3540.bench benchmarks/downloaded/c5315.bench benchmarks/downloaded/c6288.bench benchmarks/downloaded/c7552.bench
+# Note: vectors come from Python's random module (iverilog_check.make_vectors), not the C++
+# --random generator, so coverage here differs from docs/results/part2_coverage.txt.
+
+# seed=1; vectors per circuit=256
+c1908: 256 vectors, 1826 faults, 1690 detected (92.55%), detected sets and first-detecting vectors match (oracle 50.1 s)
+c2670: 256 vectors, 2852 faults, 2366 detected (82.96%), detected sets and first-detecting vectors match (oracle 134.8 s)
+c3540: 256 vectors, 3438 faults, 3012 detected (87.61%), detected sets and first-detecting vectors match (oracle 193.6 s)
+c5315: 256 vectors, 4970 faults, 4922 detected (99.03%), detected sets and first-detecting vectors match (oracle 148.0 s)
+c6288: 256 vectors, 4896 faults, 4879 detected (99.65%), detected sets and first-detecting vectors match (oracle 35.8 s)
+c7552: 256 vectors, 7438 faults, 6940 detected (93.30%), detected sets and first-detecting vectors match (oracle 500.1 s)
+ALL MATCH

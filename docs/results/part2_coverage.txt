@@ -1,0 +1,22 @@
+# faultline Part 2: stuck-at fault coverage with 1024 seeded random vectors (single thread)
+# date: 2026-11-08 00:14 UTC
+# command (per circuit, run 5 times): build/release/faultline faultsim <file.bench> --random 1024 --seed 1
+# build: cmake --preset release && cmake --build --preset release (-O3 via CMAKE_BUILD_TYPE=Release)
+# machine: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz, Linux 6.8.0-138-generic, g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+# faults = stuck-at-0/1 on every net stem (primary inputs included); fan-out branch faults are
+# not modelled and faults are not collapsed, so these numbers are not comparable with published
+# collapsed-fault coverage figures. time_ms = fault simulation only (good-circuit simulation of
+# each block included; parsing and vector generation excluded), as printed by the CLI.
+
+circuit   gates  faults  detected  coverage  median_ms   min_ms
+c17           6      22        22   100.00%      0.011    0.011
+c432        160     392       389    99.23%      0.297    0.297
+c499        202     486       485    99.79%      0.365    0.358
+c880        383     886       868    97.97%      1.903    1.834
+c1355       546    1174      1160    98.81%      1.920    1.898
+c1908       880    1826      1751    95.89%     14.898   14.367
+c2670      1193    2852      2381    83.49%     60.615   59.319
+c3540      1669    3438      3294    95.81%     48.942   48.277
+c5315      2307    4970      4944    99.48%     65.214   64.483
+c6288      2416    4896      4879    99.65%     31.910   31.447
+c7552      3512    7438      7026    94.46%    247.530  245.266

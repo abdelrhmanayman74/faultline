@@ -41,6 +41,8 @@ add_library(faultline_core
   src/levelize.cpp
   src/scalar_simulator.cpp
   src/vectors.cpp
+  src/bit_parallel_simulator.cpp
+  src/fault_simulator.cpp
 )
 target_include_directories(faultline_core PUBLIC include)
 faultline_warnings(faultline_core)
@@ -66,6 +68,8 @@ if(BUILD_TESTING)
     tests/test_bench_parser.cpp
     tests/test_levelize.cpp
     tests/test_scalar_simulator.cpp
+    tests/test_bit_parallel_simulator.cpp
+    tests/test_fault_simulator.cpp
   )
   target_link_libraries(faultline_tests PRIVATE faultline_core GTest::gtest_main)
   target_compile_definitions(faultline_tests PRIVATE
@@ -79,10 +83,16 @@ if(BUILD_TESTING)
 
   find_package(Python3 3.10 COMPONENTS Interpreter)
   if(Python3_FOUND)
-    add_test(NAME python_ref_eval_vs_cli
+    add_test(NAME python_unittests
       COMMAND ${FAULTLINE_TEST_LAUNCHER} ${Python3_EXECUTABLE} -m unittest discover -s ${CMAKE_SOURCE_DIR}/tests/python -v)
-    set_tests_properties(python_ref_eval_vs_cli PROPERTIES
+    set_tests_properties(python_unittests PROPERTIES
       ENVIRONMENT "FAULTLINE_CLI=$<TARGET_FILE:faultline>")
+
+    add_test(NAME faultsim_check_c17
+      COMMAND ${FAULTLINE_TEST_LAUNCHER} ${Python3_EXECUTABLE}
+              ${CMAKE_SOURCE_DIR}/tools/faultsim_check.py
+              --cli $<TARGET_FILE:faultline>
+              ${CMAKE_SOURCE_DIR}/benchmarks/iscas85/c17.bench)
 
     find_program(IVERILOG_EXECUTABLE iverilog)
     if(IVERILOG_EXECUTABLE)

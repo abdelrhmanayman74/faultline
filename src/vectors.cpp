@@ -1,6 +1,7 @@
 #include "faultline/vectors.hpp"
 
 #include <fstream>
+#include <random>
 
 #include "faultline/errors.hpp"
 
@@ -59,6 +60,23 @@ std::vector<InputVector> read_vectors_file(const std::string& path, std::size_t 
         throw ParseError(path, 0, "cannot open file");
     }
     return read_vectors(file, path, num_inputs);
+}
+
+std::vector<InputVector> random_vectors(std::size_t count, std::size_t num_inputs,
+                                        std::uint64_t seed) {
+    std::mt19937_64 engine(seed);
+    std::vector<InputVector> vectors(count, InputVector(num_inputs, 0));
+    for (InputVector& vector : vectors) {
+        // One 64-bit draw supplies the next 64 input bits.
+        std::uint64_t bits = 0;
+        for (std::size_t i = 0; i < num_inputs; ++i) {
+            if (i % 64 == 0) {
+                bits = engine();
+            }
+            vector[i] = static_cast<Logic>((bits >> (i % 64)) & 1U);
+        }
+    }
+    return vectors;
 }
 
 std::string to_bit_string(const std::vector<Logic>& values) {
