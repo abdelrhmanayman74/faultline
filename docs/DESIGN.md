@@ -3,6 +3,7 @@
 Part 1 covers parsing, the netlist graph, levelization and scalar simulation.
 Part 2 adds bit-parallel simulation and single-threaded stuck-at fault simulation.
 Part 3 adds a bounded queue, a thread pool and parallel fault simulation.
+Part 4 adds a TCP job server, its protocol and a Python client.
 
 ## Netlist (`include/faultline/netlist.hpp`)
 
@@ -363,6 +364,256 @@ seed 1).
   so the clean result means something.
 - `faultline_bench` compares every timed run with the serial result.
 
+## Server (Part 4)
+
+Files: `socket.hpp/.cpp` (RAII descriptor and POSIX socket helpers),
+`protocol.hpp/.cpp` (framing and request parsing), `server.hpp/.cpp` (the
+`Server` class), `apps/faultline_server.cpp` (options, signals),
+`client/faultline_client.py`. The wire format is in `docs/PROTOCOL.md`.
+
+### Sockets (`include/faultline/socket.hpp`)
+
+- **`Socket` owns one file descriptor** and closes it in its destructor.
+  Move-only: a copy would close the same number twice, and after the first
+  `close()` the kernel may already have given that number to another file.
+  Moving leaves the source at `-1`.
+- **`send_all`** loops because `send()` may accept only part of the buffer
+  when the kernel's send buffer is full, and retries on `EINTR`.
+  `MSG_NOSIGNAL` turns "peer has closed" into an `EPIPE` error instead of
+  `SIGPIPE`, whose default action would kill the whole server because of one
+  client.
+- **`recv_exact`** loops because `recv()` returns whatever has arrived (one
+  byte of a 4-byte header is legal). It returns the byte count, so the caller
+  can tell a clean close (`recv` returned 0) before a frame, a close in the
+  middle of a frame, and real errors (thrown as `std::system_error` with
+  `errno`).
+- `listen_tcp` sets `SO_REUSEADDR` (a restarted server can bind again while
+  old connections sit in `TIME_WAIT`), returns a non-blocking socket (accept
+  happens only after `poll()` says a connection waits; if it vanished
+  meanwhile, `accept` returns `EAGAIN` instead of blocking the loop), and
+  binds port 0 for tests, read back with `getsockname`. IPv4 literals only
+  (`inet_pton`), which keeps it free of resolver code. All descriptors are
+  `CLOEXEC`.
+
+### Framing (`src/protocol.cpp`)
+
+4-byte big-endian length + payload, built in one buffer and sent with one
+`send_all`. `read_frame` checks the length against the 16 MiB limit before
+allocating, so a hostile header cannot make the server allocate gigabytes.
+A violation (too long, or the connection closes mid-frame) throws
+`ProtocolError`; the connection thread answers `ERR ...` and closes, because
+after a bad length nobody knows where the next frame starts. A bad *request*
+inside a good frame (unknown command, bad argument, parse error) only gets
+an `ERR` reply; the connection stays usable. `parse_request` checks the
+command name and argument count from one table, `parse_faultsim_args` the
+`key=value` options and their ranges, so `Server` code only sees valid input.
+
+### Threads and what each one owns
+
+| thread | count | owns | blocks in |
+|---|---|---|---|
+| main (`Server::run`) | 1 | listening socket, the `connections_` list structure (adds, reaps, joins) | `poll()` on the listening socket and the signalfd |
+| connection | one per client, at most `--max-connections` | its `Socket` (closes it), its request/reply loop | `recv()` in `read_frame` |
+| job worker | `--job-workers` | the job it is running | the job queue's `pop()` |
+| simulation | `threads=` of each running job | one chunk of faults (Part 3) | its own pool |
+
+Shared state, each with its own `std::mutex`:
+
+| state | guarded by | used by |
+|---|---|---|
+| `circuits_` (name -> `shared_ptr<const Netlist>`) | `circuits_mutex_` | LOAD writes; SIM, FAULTSIM, STATUS read |
+| `jobs_`, `finished_jobs_`, every `Job`'s `state/summary/result`, `stopping_` | `jobs_mutex_` | connection threads, workers, shutdown |
+| `connections_`, each `Connection::finished` | `connections_mutex_` | main thread, each connection thread at its end, STATUS |
+| `Job::stop` (`std::stop_source`) | none needed: `request_stop()` is thread-safe | CANCEL, disconnect, shutdown |
+
+**No deadlock:** no code holds two of these mutexes at once. The one nesting
+is `jobs_mutex_` -> the pool's queue mutex inside `try_submit`; the workers
+release the queue mutex before running a task that takes `jobs_mutex_`, so
+the opposite order never happens.
+
+**Registry: why a plain mutex and not `std::shared_mutex`.** Parsing happens
+before taking the lock; readers hold it only to copy one `shared_ptr`
+(a few nanoseconds). A reader/writer lock helps when readers hold the lock
+for a long time and would otherwise wait for each other; here they do not,
+and `shared_mutex` costs more per lock. The `shared_ptr<const Netlist>` does
+the real work: a SIM or job keeps its own reference, so it can keep using a
+netlist after the lock is released, even if a LOAD replaces that name, and
+`const` means nobody can modify a netlist that other threads read.
+
+### Connection lifecycle
+
+- The main thread accepts, reaps finished connections (moves them out of the
+  list under the lock, then lets their `std::jthread`s join *outside* the
+  lock, since a finishing thread needs that lock to say it is finished), then
+  counts the remaining open ones. Over the cap it sends `ERR server full` and
+  closes. Otherwise it adds a `Connection` to a `std::list` and only then
+  starts its thread: the thread keeps a reference to the element, and list
+  elements never move (`splice` relinks nodes without moving them either).
+- The connection thread loops: read a frame, `handle()` it, write the reply.
+  It catches every exception, because an exception leaving a thread function
+  calls `std::terminate`. On the way out it cancels its jobs, then, under
+  `connections_mutex_`, closes its socket and sets `finished`.
+- **Who closes the fd.** Only the connection thread closes its socket, and
+  only under `connections_mutex_`; the main thread touches that fd (with
+  `shutdown()`) only under the same mutex and only if `finished` is false.
+  Otherwise the main thread could call `shutdown()` on a number that was just
+  closed and reused for another client's socket.
+- No thread is detached: every connection thread is joined, either when it
+  is reaped or at shutdown.
+
+### Job lifecycle
+
+```
+FAULTSIM -> queued --worker picks it up--> running --> done
+              |                              |   \---> failed (exception)
+              +-------- CANCEL/disconnect ---+---> cancelled
+```
+
+- **Submit.** The connection thread parses the arguments and (if given) the
+  vector body, so mistakes are reported in the reply. Under `jobs_mutex_` it
+  calls `ThreadPool::try_submit()` (never blocks) and records the job only if
+  that succeeded: when the queue is full the client gets `BUSY` immediately
+  instead of its connection thread blocking (backpressure). Submitting and
+  recording under one lock means a worker that starts the job at once waits
+  for the lock and then finds the record.
+- **Ownership.** The task holds `shared_ptr`s to its `Job` and its netlist,
+  so both live as long as the task, even if the record is forgotten or the
+  name reloaded. The `std::future` from `try_submit` is dropped: `run_job`
+  catches every exception, and a `packaged_task` future (unlike one from
+  `std::async`) does not block in its destructor.
+- **Run.** The worker marks the job `running` (or returns if it was cancelled
+  while queued), generates random vectors if asked, and calls
+  `run_fault_simulation_parallel(..., job.stop.get_token())`. That function
+  makes its own pool for the call; running the chunks on the server's job
+  pool and waiting for them from a job could deadlock (Part 3, "do not wait
+  on the pool from inside the pool").
+- **Results by polling.** `RESULT <id>` returns `PENDING` until the job is
+  finished. A blocking RESULT would park the connection thread on a condition
+  variable instead of in `recv()`, and then it could not notice that its
+  client had gone. Polling keeps one rule: a connection thread only ever
+  waits on its own socket.
+- **Memory.** Finished jobs stay queryable; the oldest are dropped once more
+  than 256 have finished (trimmed when a job is submitted, never while
+  another loop iterates over the map).
+
+### Cancellation
+
+Each job has its own `std::stop_source`; one source per job is what lets one
+client's job stop without touching anyone else's.
+
+- `CANCEL` on a queued job: `request_stop()` and state `cancelled` at once;
+  the worker skips it when it reaches it. On a running job:
+  `request_stop()`; the simulation checks the token before each block and
+  throws `Cancelled`, and the worker records `cancelled`. Latency is one block
+  (64 vectors) of one chunk: 61 ms debug / 590 ms TSan on c7552 in
+  `test_cancel_long_job`. Random vector generation is not interruptible
+  (fast compared with the simulation).
+- **Client disconnect.** The connection thread sees end of stream or an
+  error from `recv()`/`send()`, then cancels every unfinished job whose
+  `owner` is its connection id. A client that disappears without a word
+  (cable pulled, no FIN/RST) is only noticed when TCP gives up; there is no
+  idle timeout (see limitations).
+
+### Shutdown (SIGINT/SIGTERM)
+
+`main()` blocks SIGINT and SIGTERM with `pthread_sigmask` **before** the
+`Server` (and so any thread) exists; threads inherit the mask, so no thread is
+ever interrupted by these signals. A blocked signal stays pending, and a
+`signalfd` makes "pending" readable. `Server::run()` polls the listening
+socket and the signalfd together. Why this and not the alternatives:
+
+- a handler that sets a flag: `accept()` and `recv()` in other threads would
+  not wake up reliably, and the handler may only touch `volatile
+  sig_atomic_t`/lock-free atomics and async-signal-safe functions;
+- the self-pipe trick (handler writes a byte to a pipe that `poll()`
+  watches) works everywhere, but needs a handler and a global descriptor;
+- `signalfd`: no handler, no global, no async-signal-safety rules, one
+  extra `pollfd`. Linux-only, which this project accepts.
+
+Then `shutdown()`, in this order:
+
+1. Close the listening socket: new connections are refused.
+2. Under `jobs_mutex_` set `stopping_` (a FAULTSIM arriving now gets `ERR
+   server is shutting down`), then cancel every job: queued ones become
+   `cancelled`, running ones get `request_stop()`.
+3. Under `connections_mutex_`, call `::shutdown(fd, SHUT_RDWR)` on every open
+   connection. A thread blocked in `recv()` gets end of stream; a thread busy
+   with a request finishes it and its `send()` fails. `shutdown()` instead of
+   `close()`: the descriptor stays valid until its owning thread closes it.
+4. Join the connection threads (outside the lock).
+5. `pool_.shutdown()`: queued tasks see `cancelled` and return, running jobs
+   throw `Cancelled` within one block, workers are joined.
+
+`test_sigterm_stops_running_job_quickly` checks a SIGTERM during a long job
+exits with status 0 well within the limit. `pool_` is the last member, so
+even without `shutdown()` it would be destroyed (and joined) before the
+members its jobs use.
+
+### Why thread-per-connection with a cap
+
+Each connection's code is a plain blocking loop (read, handle, write) with
+its state in local variables, which is easy to read and to reason about. Its
+costs are a thread (stack memory, scheduling) per client, which is fine for
+tens of clients; the cap keeps a flood of connections from creating
+thousands of threads. Heavy work does not run on connection threads anyway:
+FAULTSIM goes to the bounded job pool, so the CPU-bound part is limited by
+`--job-workers` and `--queue`, not by the number of clients.
+
+**What epoll would change (future work).** One or a few threads would wait
+in `epoll_wait()` on all sockets, which are non-blocking. Each connection
+would need an explicit state machine (reading header / reading payload /
+writing reply, with partial buffers kept between events), because a
+half-read frame can no longer live on a thread's stack. That scales to many
+thousands of mostly idle connections with a fixed number of threads, at the
+cost of more complex code. Long requests (SIM) would have to move to the
+worker pool so they do not stall the event loop.
+
+### Limitations
+
+- No idle timeout: a client that connects and sends nothing keeps a slot
+  (and a thread) until it disconnects. `SO_RCVTIMEO` or `poll()` with a
+  timeout in the connection loop would fix it.
+- `accept()` failing with `EMFILE` (out of descriptors) ends `run()` with an
+  error (clean shutdown, exit status 1) instead of backing off.
+- IPv4 only; no TLS, no authentication. The default host is 127.0.0.1 for
+  that reason.
+- SIM runs on the connection thread; a huge SIM keeps that thread busy, and
+  its reply is limited to 16 MiB.
+- RESULT is polled; clients wait at most one poll interval longer than needed.
+- A queued job keeps its parsed vector body as one `std::vector` per vector,
+  several times the size of the text for small circuits; with a full queue
+  of 16 MiB bodies that is a lot of memory. Packing vectors into
+  `PatternBlock`s at submit time would bound it.
+
+### Verification (Part 4)
+
+- GoogleTest (`tests/test_socket.cpp`, `tests/test_protocol.cpp`): `Socket`
+  closes on destruction and on move-assignment, moved-from is invalid;
+  `send_all`/`recv_exact` move 4 MiB through a `socketpair` (many partial
+  sends/receives) unchanged; `recv_exact` returns a short count on close;
+  sending to a closed peer throws `EPIPE` and does not kill the process;
+  TCP listen on port 0 + connect; frame header bytes; several frames on one
+  stream; a frame fed one byte at a time; oversize encode and oversize
+  header rejected; truncated header and truncated payload rejected; request
+  splitting, unknown commands, wrong argument counts, every FAULTSIM option
+  error.
+- Python (`tests/python/test_server.py`, ctest `server_integration`, 14
+  tests) against the real binary on port 0: LOAD + SIM equal the CLI on all
+  32 c17 vectors; parse errors carry the line; bad requests keep the
+  connection usable; FAULTSIM on c432 (1000 random vectors, seed 7, 4
+  threads) gives the same summary and the same per-fault first detecting
+  vector as `faultline faultsim`; FAULTSIM with a vector body; BUSY with one
+  worker and a queue of one; CANCEL of a running c7552 job; disconnect
+  cancels the job (seen from a second connection); SIGTERM during a job;
+  connection cap; oversize frame; truncated frame; byte-by-byte frames;
+  8 concurrent clients doing LOAD, SIM and FAULTSIM at once. Each test stops
+  its server with SIGTERM and requires exit status 0 and no "Sanitizer" in
+  stderr.
+- The whole ctest suite passes in the `debug`, `asan` and `tsan` presets, so
+  the server runs under ASan/UBSan and TSan in the integration tests. A race
+  injected on purpose into `Server::handle` made the TSan server exit with
+  status 66 and the test fail, so a clean run is meaningful.
+
 ## Building
 
 ```
@@ -370,6 +621,7 @@ python3 -m venv .venv && .venv/bin/pip install cmake ninja
 export PATH="$PWD/.venv/bin:$PATH"
 cmake --preset debug && cmake --build --preset debug && ctest --preset debug
 tools/fetch_benchmarks.sh   # optional: downloads the larger ISCAS-85 circuits
+build/debug/faultline_server --port 5555 &   # then: client/faultline_client.py --port 5555 ...
 ```
 
 The `tsan` preset runs tests under `setarch <arch> -R` (address randomization

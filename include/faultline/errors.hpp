@@ -62,4 +62,11 @@ public:
     Cancelled() : std::runtime_error("cancelled") {}
 };
 
+// A peer broke the wire protocol (bad frame, unknown command, bad argument).
+// Socket failures are reported separately as std::system_error with errno.
+class ProtocolError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 }  // namespace faultline
